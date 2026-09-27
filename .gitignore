@@ -1,0 +1,10 @@
+discord/
+*.env
+.env
+proxy.log
+proxy.out
+*.log
+gb/
+ufo/
+.venv/
+__pycache__/

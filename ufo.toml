@@ -1,0 +1,27 @@
+[database]
+url = "sqlite+aiosqlite:///ufo.db"
+owner_url = "sqlite+aiosqlite:///ufo.db"
+
+[blob]
+backend = "filesystem"
+root = "./blobs"
+
+[pack]
+name = "assistant"
+
+[research]
+search_provider = "perplexity"
+
+[connect]
+public_base_url = "http://ufo.localhost:8710"
+
+[sandbox]
+ingress_public_url = "http://ufo.localhost:8100"
+
+[flags]
+backend = "open"
+
+[models]
+auto_model = "gpt-5.4-mini"
+ambient_reply_model = "gpt-5.4-mini"
+background_jobs_model = "gpt-5.4-mini"

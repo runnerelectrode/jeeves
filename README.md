@@ -1,0 +1,81 @@
+# Jeeves
+
+A digital twin of a teammate, built from their Discord history in an afternoon.
+
+- **What the twin knows** lives in [GBrain](https://github.com/garrytan/gbrain): every message the person wrote,
+  one page per channel, retrieved by keyword per question with the channel and date as provenance.
+- **How the twin sounds** lives in a LoRA trained on [River](https://docs.river.ai): the thread before each of the
+  person's replies is the prompt, their actual reply is the target. A blind judge on held-out threads is the receipt.
+- **Where you talk to it** is [UFO](https://github.com/ufo-ai/ufo-core), unmodified. UFO thinks it is talking to
+  OpenAI; it is talking to `proxy.py`, which adds memory to every request and answers from the base model or the twin.
+
+```
+  UFO (terminal client + server)
+        │  OPENAI_BASE_URL=http://127.0.0.1:8711/v1
+        ▼
+  proxy.py ── gbrain search ──► memory (facts, provenance) ──┐
+        │                                                    ▼
+        ├─ mode=base ─► River /v1  Qwen3.8-27B          (right facts, chatbot voice)
+        └─ mode=twin ─► River checkpoint sampler, LoRA  (right facts, the person's voice)
+```
+
+The `mode` file is read on every request, so the demo flips base → twin live without restarting anything.
+
+## Run it
+
+Needs: Python 3.12 + `uv`, Rust (`cargo`) for UFO's client, Bun ≥ 1.3.11 for GBrain, a River API key, a Discord bot
+token for a server you admin (Message Content intent on, "Read Message History" permission).
+
+```bash
+git clone https://github.com/ufo-ai/ufo-core ufo && (cd ufo && make install && make build)
+git clone https://github.com/garrytan/gbrain && (cd gbrain && bun install && bun link)
+uv venv .venv && uv pip install --python .venv river-client transformers
+export RIVER_API_KEY=... DISCORD_BOT_TOKEN=...   # keep these in a .env you never commit
+
+# 1. Discord -> messages, brain pages, reply pairs (last 15% frozen as holdout)
+python pull_discord.py --guild "<server>" --author <username> --out discord
+
+# 2. memory
+(cd gb && gbrain init --pglite --no-embedding --non-interactive && gbrain import ../discord/brain --no-embed --allow-noncanonical-root)
+
+# 3. voice: train on River (Qwen3.5-9B, LoRA rank 16, ~3 s/step), then gate blind
+python twin.py --name <username> train --data discord --run twin-run --steps 40
+python twin.py --name <username> gate  --data discord --run twin-run --n 30     # -> twin-run/receipt.json
+
+# 4. serve
+echo base > mode
+python proxy.py --name <username> --twin twin-run/latest.json --twin-base Qwen/Qwen3.5-9B --gbrain "$PWD/gb" &
+cp ufo.toml ufo/ufo.toml && (cd ufo && UFO_OPENAI_API_KEY=proxy-holds-the-key uv run ufoctl init --email you@x.com --model gpt-5.4-mini --reasoning low --member-model-provider openai)
+(cd ufo && OPENAI_BASE_URL=http://127.0.0.1:8711/v1 uv run ufoctl serve) &
+mkdir -p ~/.ufo && install -m 600 ~/.ufoctl/token ~/.ufo/credentials && echo http://localhost:8710 > ~/.ufo/workspace
+./ufo/client/target/debug/ufo "where do we keep the staging key?"
+
+# 5. flip
+echo twin > mode
+```
+
+## The demo
+
+1. Ask UFO something only this person knows. Memory finds the message; the answer is right, the voice is a chatbot's.
+2. `echo twin > mode`. Same question, same facts, now typed the way they would have typed it.
+3. `twin-run/receipt.json`: on threads the twin never saw, a blind judge picks twin over base N times out of M.
+4. Onboarding: a new hire asks "how do we do X here?" and gets the team's own answer, with channel and date.
+
+## How UFO was pointed at River without touching it
+
+UFO builds its OpenAI client with no base URL, so the OpenAI SDK honours `OPENAI_BASE_URL`. Its model ids are a
+closed list, so `ufo.toml` pins a chat-surface id (`gpt-5.4-mini`) and the proxy rewrites it. Tools are dropped at
+the proxy because River has no tool-call parser for Qwen. UFO's own memory extension asks for embeddings River does
+not serve; it logs `embed_query_failed` and carries on. Jeeves memory comes from GBrain instead.
+
+## Files
+
+| file | what |
+|---|---|
+| `pull_discord.py` | bot-token REST puller; brain pages per channel; pairs = thread before a reply → the reply; holdout = newest 15% |
+| `twin.py` | `train` / `gate` / `reply` on River. Cross-entropy by default; River also takes `--loss opsd` |
+| `proxy.py` | OpenAI-compatible endpoint: GBrain memory injection, base passthrough (streamed), twin via checkpoint sampler (replayed as SSE) |
+| `ufo.toml` | the UFO config used (SQLite, filesystem blobs, `gpt-5.4-mini` as the id UFO sends) |
+| `mode` | `base` or `twin` |
+
+Not committed: the Discord export, the brain, logs, keys. `.gitignore` covers them.
