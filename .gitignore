@@ -8,3 +8,4 @@ gb/
 ufo/
 .venv/
 __pycache__/
+twin-run*/gate_rows.jsonl
