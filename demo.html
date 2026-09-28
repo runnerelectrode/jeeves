@@ -18,6 +18,7 @@ button{font:600 14px Helvetica,Arial,sans-serif;padding:10px 16px;border:0;borde
 table{border-collapse:collapse;font:14px Helvetica,Arial,sans-serif}td,th{padding:6px 14px 6px 0;text-align:left;border-bottom:1px solid var(--line)}
 select{font:inherit;padding:4px 8px}
 .hint{font:13px Helvetica,Arial,sans-serif;color:var(--mute)}
+.mem{font:11px/1.4 Helvetica,Arial,sans-serif;color:var(--mute);margin-top:8px;letter-spacing:.02em}
 </style></head><body>
 <header><h1>Jeeves</h1><span>how would each teammate reply? · LoRA per person on River, trained on their own Discord replies · blind-judged on threads they never saw</span></header>
 <main>
@@ -38,13 +39,15 @@ let twins=[];
 const $=s=>document.querySelector(s);
 async function ask(q,twin){const url='/v1/chat/completions?'+(twin?'twin='+encodeURIComponent(twin):'mode=base');
  const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'jeeves',max_tokens:160,messages:[{role:'user',content:q}]})});
- const d=await r.json();return d.choices?d.choices[0].message.content:JSON.stringify(d).slice(0,200)}
+ const mem=(r.headers.get('X-Jeeves-Memory')||'').split(',').filter(Boolean);
+ const d=await r.json();return {text:d.choices?d.choices[0].message.content:JSON.stringify(d).slice(0,200),mem}}
 $('#go').onclick=async()=>{const q=$('#q').value.trim();if(!q)return;
  const g=document.createElement('div');g.className='grid';
- g.innerHTML=`<div class="card base"><div class="lab">base · untrained</div><div>…</div></div>`+twins.map(t=>`<div class="card twin"><div class="lab">${t.name}'s twin</div><div>…</div></div>`).join('');
+ g.innerHTML=`<div class="card base"><div class="lab">base · untrained · org memory</div><div>…</div><div class="mem"></div></div>`+twins.map(t=>`<div class="card twin"><div class="lab">${t.name}'s twin · own memory</div><div>…</div><div class="mem"></div></div>`).join('');
  const th=document.createElement('div');th.className='thread';th.textContent=q;$('#out').prepend(g);$('#out').prepend(th);
- const cells=g.querySelectorAll('.card>div:last-child');
- ask(q,null).then(x=>cells[0].textContent=x);twins.forEach((t,i)=>ask(q,t.name).then(x=>cells[i+1].textContent=x))};
+ const cards=g.querySelectorAll('.card');
+ const fill=(c,x)=>{c.children[1].textContent=x.text;c.children[2].textContent=x.mem.length?'from: '+x.mem.map(s=>'#'+s.replace(/^.*?-(?=[^-]+$)/,'')).join(', '):'no memory hit'};
+ ask(q,null).then(x=>fill(cards[0],x));twins.forEach((t,i)=>ask(q,t.name).then(x=>fill(cards[i+1],x)))};
 function fmt(ctx){return (ctx||[]).map(m=>`${m.author}: ${m.text}`).join('\n')}
 async function showRows(name){const d=await (await fetch('/gate_rows?twin='+encodeURIComponent(name))).json();
  $('#rows').innerHTML=(d.rows||[]).map(r=>`<div class="row"><div class="thread">${fmt(r.context)||'#'+r.channel}</div>

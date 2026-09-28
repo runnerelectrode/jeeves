@@ -170,12 +170,19 @@ def dangling(t):
 
 
 class H(BaseHTTPRequestHandler):
+    _mem_slugs = []
+
     def log_message(self, *a):  # quiet
         pass
 
+    def _mem_header(self):
+        if self._mem_slugs:
+            self.send_header("X-Jeeves-Memory", ",".join(self._mem_slugs)[:900])
+        self.send_header("Access-Control-Expose-Headers", "X-Jeeves-Memory")
+
     def _json(self, code, obj):
         body = json.dumps(obj).encode()
-        self.send_response(code); self.send_header("Content-Type", "application/json")
+        self.send_response(code); self.send_header("Content-Type", "application/json"); self._mem_header()
         self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
 
     def do_GET(self):
@@ -214,6 +221,7 @@ class H(BaseHTTPRequestHandler):
         q = last_user_text(req.get("messages", []))
         who = pick_twin(req, query)
         mem, slugs = memory(q, who)      # base: the org brain; twin: that person's own brain, if one was given
+        self._mem_slugs = sorted(set(slugs))
         m = f"twin:{who}" if who else "base"
         try:
             if who:
@@ -246,7 +254,7 @@ class H(BaseHTTPRequestHandler):
             log({"upstream": e.code, "body": body[:300].decode(errors="ignore")}); return
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream" if stream else "application/json")
-        self.send_header("Cache-Control", "no-cache"); self.end_headers()
+        self.send_header("Cache-Control", "no-cache"); self._mem_header(); self.end_headers()
         while True:
             chunk = up.read(1024)
             if not chunk: break
@@ -281,7 +289,7 @@ class H(BaseHTTPRequestHandler):
         if not req.get("stream"):
             return self._json(200, {"id": cid, "object": "chat.completion", "created": now, "model": "jeeves",
                                     "choices": [{"index": 0, "message": {"role": "assistant", "content": text}, "finish_reason": "stop"}], "usage": usage})
-        self.send_response(200); self.send_header("Content-Type", "text/event-stream"); self.send_header("Cache-Control", "no-cache"); self.end_headers()
+        self.send_response(200); self.send_header("Content-Type", "text/event-stream"); self.send_header("Cache-Control", "no-cache"); self._mem_header(); self.end_headers()
         def send(delta, finish=None, extra=None):
             ch = {"id": cid, "object": "chat.completion.chunk", "created": now, "model": "jeeves",
                   "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}
