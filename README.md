@@ -61,6 +61,20 @@ echo twin > mode
 3. `twin-run/receipt.json`: on threads the twin never saw, a blind judge picks twin over base N times out of M.
 4. Onboarding: a new hire asks "how do we do X here?" and gets the team's own answer, with channel and date.
 
+## Results
+
+Three teammates from one Discord server (31k messages), one LoRA each on Qwen3.5-9B via River. Gate = 30 held-out threads the twin never saw; a blind judge (DeepSeek-V4.1-Flash) sees the person's real reply, then base and twin in random order, and picks the one that reads more like them. Base alone would score 0.5.
+
+| twin | training messages | held-out threads | config | twin wins | losses | win rate |
+|---|---|---|---|---|---|---|
+| A | 3162 | 559 | 300 steps, batch 16, rank 32 | 19 | 11 | 0.633 |
+| A (40 steps) | 3162 | 559 | 40 steps, batch 8, rank 16 | 18 | 12 | 0.6 |
+| A (merged replies) | 2645 | 467 | 120 steps, batch 16, rank 32; replies merged over 15 min | 16 | 14 | 0.533 |
+| B | 1818 | 321 | 120 steps, batch 16, rank 32 | 20 | 10 | 0.667 |
+| C | 1264 | 224 | 120 steps, batch 16, rank 32 | 17 | 13 | 0.567 |
+
+Training cost for all five runs together was under a dollar of River credit. `receipts/` has the JSON; per-thread rows are not committed because they quote messages.
+
 ## How UFO was pointed at River without touching it
 
 UFO builds its OpenAI client with no base URL, so the OpenAI SDK honours `OPENAI_BASE_URL`. Its model ids are a

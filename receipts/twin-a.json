@@ -1,0 +1,13 @@
+{
+ "twin": "A",
+ "training_pairs": 3162,
+ "holdout_pairs": 559,
+ "gated_threads": 30,
+ "wins": 19,
+ "losses": 11,
+ "win_rate": 0.633,
+ "trained_steps": 300,
+ "config": "300 steps, batch 16, rank 32",
+ "base": "Qwen/Qwen3.5-9B",
+ "judge": "deepseek-ai/DeepSeek-V4.1-Flash"
+}
