@@ -62,23 +62,38 @@ def last_user_text(messages):
     return ""
 
 
-def memory(query):
-    if not ARGS.gbrain or not query.strip():
+def brain_dir(who):
+    """The org brain for the base model; each twin's own brain (built from their messages only) for that twin."""
+    if who and (TWINS.get(who) or {}).get("brain"):
+        return TWINS[who]["brain"]
+    return ARGS.gbrain if not who else None
+
+
+def memory(query, who=None):
+    cwd = brain_dir(who)
+    if not cwd or not query.strip():
         return "", []
     try:
         out = subprocess.run(["gbrain", "search", query, "--limit", str(ARGS.memory_k), "--json"],
-                             capture_output=True, text=True, timeout=20, cwd=ARGS.gbrain)
+                             capture_output=True, text=True, timeout=20, env={**os.environ, "GBRAIN_HOME": str(cwd)})
         hits = json.loads(out.stdout) if out.stdout.strip() else []
     except Exception as e:  # memory is best-effort; the answer must still come
         log({"memory_error": str(e)[:200]}); return "", []
     if isinstance(hits, dict):
         hits = hits.get("results") or hits.get("hits") or []
-    lines = []
+    qw = {w for w in re.findall(r"[a-z0-9]{3,}", query.lower())} - {"the", "and", "for", "what", "how", "did", "does", "when", "where", "who", "our", "are", "you", "can"}
+    facts = []
     for h in hits:
         txt = h.get("chunk_text") or h.get("content") or ""
-        facts = [l.strip()[2:] for l in txt.splitlines() if l.strip().startswith("- ")]   # one bullet = one dated message
-        lines.extend(facts[:6] if facts else [txt[:400]])
-    return "\n".join(f"- {l}" for l in lines[:18]), [h.get("slug") or h.get("title") for h in hits]
+        for l in txt.splitlines():
+            if l.strip().startswith("- "):                     # one bullet = one dated message
+                f = l.strip()[2:]
+                facts.append((len(qw & set(re.findall(r"[a-z0-9]{3,}", f.lower()))), f))
+        if not any(l.strip().startswith("- ") for l in txt.splitlines()):
+            facts.append((0, txt[:400]))
+    facts.sort(key=lambda x: -x[0])                            # the lines that share words with the question first
+    lines = [f for _, f in facts[:12]]
+    return "\n".join(f"- {l}" for l in lines), [h.get("slug") or h.get("title") for h in hits]
 
 
 def base_messages(messages, mem):
@@ -198,8 +213,7 @@ class H(BaseHTTPRequestHandler):
         t0 = time.monotonic()
         q = last_user_text(req.get("messages", []))
         who = pick_twin(req, query)
-        want_mem = who is None or "memory=1" in query      # twins answer in voice; facts are the base model's job
-        mem, slugs = memory(q) if want_mem else ("", [])
+        mem, slugs = memory(q, who)      # base: the org brain; twin: that person's own brain, if one was given
         m = f"twin:{who}" if who else "base"
         try:
             if who:
@@ -286,11 +300,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8711)
     ap.add_argument("--base", default="Qwen/Qwen3.8-27B-FP8", help="River model for base mode")
-    ap.add_argument("--twin", action="append", default=[], metavar="NAME=RUN_DIR[:DATA_DIR]",
-                    help="a trained twin: its name (as used in training), the run dir with latest.json, optionally its data dir")
+    ap.add_argument("--twin", action="append", default=[], metavar="NAME=RUN_DIR[:DATA_DIR[:BRAIN_DIR]]",
+                    help="a trained twin: its name (as used in training), the run dir with latest.json, optionally its data dir and its own GBrain dir")
     ap.add_argument("--twin-base", default="Qwen/Qwen3.5-9B")
     ap.add_argument("--name", default="the user", help="(legacy) name for a single --twin given as a bare path")
-    ap.add_argument("--gbrain", default=None, help="directory holding the GBrain brain (cwd for `gbrain search`)")
+    ap.add_argument("--gbrain", default=None, help="the org brain: a GBRAIN_HOME directory (gbrain keeps one brain per home, not per cwd)")
     ap.add_argument("--memory-k", type=int, default=5)
     ap.add_argument("--max-messages", type=int, default=3, help="twin mode: continue an unfinished fragment with up to N more messages")
     ap.add_argument("--keep-harness-prompt", action="store_true")
@@ -302,8 +316,10 @@ def main():
             name, _, rest = spec.partition("="); run, _, data = rest.partition(":")
         else:
             name, run, data = ARGS.name, spec, ""
+        data, _, brain = data.partition(":")
         run = Path(run); run = run.parent if run.name == "latest.json" else run
-        TWINS[name] = {"run": run.resolve(), "data": Path(data).resolve() if data else None}
+        TWINS[name] = {"run": run.resolve(), "data": Path(data).resolve() if data else None,
+                       "brain": Path(brain).resolve() if brain else None}
     # UFO's closed model list -> bots: `ufo --model gpt-5.4 "..."` talks to the first twin, etc.
     for mid, who in zip(["gpt-5.4", "gpt-5.5", "gpt-5.4-nano"], TWINS):
         UFO_MODEL_MAP[mid] = who
