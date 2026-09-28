@@ -1,0 +1,10 @@
+{
+ "n": 30,
+ "wins": 19,
+ "losses": 11,
+ "win_rate": 0.633,
+ "checkpoint": "river://3bba1248-39c0-4ce8-9375-20696e8cb4fe/sampler_weights/twin-run3-s300-inf",
+ "trained_steps": 300,
+ "judge": "deepseek-ai/DeepSeek-V4.1-Flash",
+ "base": "Qwen/Qwen3.5-9B"
+}

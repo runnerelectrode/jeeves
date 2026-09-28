@@ -1,0 +1,37 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Jeeves</title>
+<style>
+:root{--bg:#f6f4ef;--ink:#1d1b17;--mute:#6b665c;--line:#d9d4c7;--base:#e8effa;--twin:#fbf1d9;--acc:#2f5d8a}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Georgia,serif}
+header{display:flex;align-items:baseline;gap:16px;padding:18px 28px;border-bottom:1px solid var(--line)}
+h1{font-size:26px;margin:0;font-weight:600}header span{color:var(--mute);font-size:14px}
+main{max-width:920px;margin:0 auto;padding:22px 16px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
+.card{padding:14px 16px;border:1px solid var(--line);border-radius:10px;background:#fff;min-height:70px;white-space:pre-wrap}
+.card.base{background:var(--base)}.card.twin{background:var(--twin)}
+.lab{font:600 12px/1 Helvetica,Arial,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);margin-bottom:8px}
+form{display:flex;gap:10px}input{flex:1;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:8px}
+button{font:600 14px Helvetica,Arial,sans-serif;padding:10px 16px;border:0;border-radius:8px;background:var(--acc);color:#fff;cursor:pointer}
+.q{margin-top:26px;color:var(--mute);font-style:italic}.mem{font:13px/1.45 Helvetica,Arial,sans-serif;color:var(--mute);margin-top:10px}
+.receipt{margin-top:30px;font:14px/1.5 Helvetica,Arial,sans-serif;color:var(--mute);border-top:1px solid var(--line);padding-top:14px}
+b{color:var(--ink)}
+</style></head><body>
+<header><h1>Jeeves</h1><span>a teammate's digital twin · facts from GBrain · voice from a LoRA on River · same question, both answers</span></header>
+<main>
+<form id="f"><input id="q" placeholder="ask something only they would know…" autofocus><button>Ask</button></form>
+<div id="log"></div>
+<div class="receipt" id="r"></div>
+</main>
+<script>
+const log=document.getElementById('log');
+async function ask(mode,q){const r=await fetch('/v1/chat/completions?mode='+mode,{method:'POST',headers:{'Content-Type':'application/json'},
+ body:JSON.stringify({model:'jeeves',max_tokens:160,messages:[{role:'user',content:q}]})});const d=await r.json();
+ return d.choices?d.choices[0].message.content:JSON.stringify(d).slice(0,200)}
+document.getElementById('f').onsubmit=async e=>{e.preventDefault();const q=document.getElementById('q').value.trim();if(!q)return;
+ const qd=document.createElement('div');qd.className='q';qd.textContent='“'+q+'”';log.prepend(qd);
+ const row=document.createElement('div');row.className='row';
+ row.innerHTML='<div class="card base"><div class="lab">base · Qwen3.8-27B + memory</div><div>…</div></div><div class="card twin"><div class="lab">twin · LoRA + memory</div><div>…</div></div>';
+ qd.after(row);const [b,t]=row.querySelectorAll('.card>div:last-child');
+ ask('base',q).then(x=>b.textContent=x);ask('twin',q).then(x=>t.textContent=x);document.getElementById('q').value=''};
+fetch('/receipt').then(r=>r.json()).then(r=>{document.getElementById('r').innerHTML=
+ `<b>Receipt</b> — held-out Discord threads the twin never saw, blind judge (${r.judge.split('/').pop()}), twin vs base: <b>${r.wins} wins / ${r.losses} losses</b> (win rate ${r.win_rate}), ${r.trained_steps} training steps, checkpoint ${r.checkpoint.split('/').pop()}`}).catch(()=>{});
+</script></body></html>

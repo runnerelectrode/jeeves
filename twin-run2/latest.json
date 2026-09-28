@@ -1,0 +1,8 @@
+{
+ "step": 40,
+ "loss": 3.0762107372283936,
+ "n": 8,
+ "seconds": 3.1,
+ "training": "river://89933d97-2a55-4b6d-9965-20fae7b951ba/weights/twin-run2-s40-train",
+ "inference": "river://89933d97-2a55-4b6d-9965-20fae7b951ba/sampler_weights/twin-run2-s40-inf"
+}

@@ -57,8 +57,28 @@ def memory(query):
         log({"memory_error": str(e)[:200]}); return "", []
     if isinstance(hits, dict):
         hits = hits.get("results") or hits.get("hits") or []
-    lines = [f"- ({h.get('slug') or h.get('title')}) {h.get('chunk_text') or h.get('content') or ''}".strip() for h in hits]
-    return "\n".join(lines)[:6000], [h.get("slug") or h.get("title") for h in hits]
+    lines = []
+    for h in hits:
+        txt = h.get("chunk_text") or h.get("content") or ""
+        facts = [l.strip()[2:] for l in txt.splitlines() if l.strip().startswith("- ")]   # one bullet = one dated message
+        lines.extend(facts[:6] if facts else [txt[:400]])
+    return "\n".join(f"- {l}" for l in lines[:18]), [h.get("slug") or h.get("title") for h in hits]
+
+
+def base_messages(messages, mem):
+    """Plain assistant prompt + memory + the stripped conversation. UFO's harness prompt assumes tools the base
+    model doesn't get here, so it is dropped (set --keep-harness-prompt to pass it through)."""
+    if ARGS.keep_harness_prompt:
+        return with_memory(messages, mem)
+    sys_prompt = (f"You are Jeeves, the team's assistant. Answer briefly and directly, in one to three sentences.")
+    conv = []
+    for m in messages:
+        if m.get("role") == "user":
+            t = strip_context(m.get("content"))
+            if t: conv.append({"role": "user", "content": t})
+        elif m.get("role") == "assistant" and isinstance(m.get("content"), str) and m["content"].strip():
+            conv.append({"role": "assistant", "content": m["content"].strip()})
+    return with_memory([{"role": "system", "content": sys_prompt}] + conv[-8:], mem)
 
 
 def with_memory(messages, mem):
@@ -87,17 +107,22 @@ def twin_messages(messages, mem):
     UFO's harness prompt is dropped; only the twin prompt and the memory note remain."""
     sys_prompt = (f"You are {ARGS.name}'s digital twin in the team's Discord. Reply the way {ARGS.name} would: same tone, "
                   f"length and phrasing as their own messages. Reply only with the message text.")
-    if mem:
-        sys_prompt += (f"\n\nMEMORY — things {ARGS.name} actually said, retrieved for this thread. Use them as facts; if the "
-                       f"answer is not in them, say you don't know:\n{mem}")
     lines = []
+    if mem:
+        if ARGS.memory_in_thread:
+            # the adapter was trained on threads, so facts go into the thread as earlier messages it can quote
+            for h in mem.split("\n"):
+                if h.strip(): lines.append(f"{ARGS.name} (earlier): {h.strip().lstrip('- ')[:400]}")
+        else:
+            sys_prompt += (f"\n\nMEMORY — things {ARGS.name} actually said, retrieved for this thread. Use them as facts; if the "
+                           f"answer is not in them, say you don't know:\n{mem}")
     for m in messages:
         if m.get("role") == "user":
             t = strip_context(m.get("content"))
             if t: lines.append(f"someone: {t}")
         elif m.get("role") == "assistant" and isinstance(m.get("content"), str) and m["content"].strip():
             lines.append(f"{ARGS.name}: {m['content'].strip()}")
-    lines = lines[-8:]
+    lines = lines[-14:]
     return [{"role": "system", "content": sys_prompt}, {"role": "user", "content": "\n".join(lines) + f"\n{ARGS.name}:"}]
 
 
@@ -111,12 +136,21 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
 
     def do_GET(self):
+        if self.path in ("/", "/index.html"):
+            body = (HERE / "demo.html").read_bytes()
+            self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body))); self.end_headers(); return self.wfile.write(body)
+        if self.path == "/receipt":
+            for r in sorted(HERE.glob("twin-run*/receipt.json"), key=lambda f: f.stat().st_mtime, reverse=True):
+                return self._json(200, json.loads(r.read_text()))
+            return self._json(404, {"error": "no receipt yet"})
         if self.path.rstrip("/").endswith("/models"):
             return self._json(200, {"object": "list", "data": [{"id": "jeeves", "object": "model", "owned_by": "jeeves"}]})
         log({"unhandled": self.path}); self._json(404, {"error": "not found"})
 
     def do_POST(self):
-        if not self.path.rstrip("/").endswith("/chat/completions"):
+        path, _, query = self.path.partition("?")
+        if not path.rstrip("/").endswith("/chat/completions"):
             log({"unhandled": self.path}); return self._json(404, {"error": "not found"})
         n = int(self.headers.get("Content-Length", 0))
         req = json.loads(self.rfile.read(n) or b"{}")
@@ -124,12 +158,14 @@ class H(BaseHTTPRequestHandler):
         q = last_user_text(req.get("messages", []))
         mem, slugs = memory(q)
         m = mode()
+        if "mode=twin" in query: m = "twin"          # the demo page asks both modes side by side
+        elif "mode=base" in query: m = "base"
         try:
             if m == "twin" and ARGS.twin:
                 req["messages"] = twin_messages(req.get("messages", []), mem)
                 self._twin(req)
             else:
-                req["messages"] = with_memory(req.get("messages", []), mem)
+                req["messages"] = base_messages(req.get("messages", []), mem)
                 self._forward(req)
             log({"mode": m, "q": q[:80], "memory": slugs, "ms": int((time.monotonic() - t0) * 1000)})
         except Exception as e:
@@ -203,6 +239,8 @@ def main():
     ap.add_argument("--name", default="the user")
     ap.add_argument("--gbrain", default=None, help="directory holding the GBrain brain (cwd for `gbrain search`)")
     ap.add_argument("--memory-k", type=int, default=5)
+    ap.add_argument("--keep-harness-prompt", action="store_true")
+    ap.add_argument("--memory-in-thread", action="store_true", help="twin mode: put memory hits in the thread instead of the system prompt")
     ARGS = ap.parse_args()
     if "RIVER_API_KEY" not in os.environ: sys.exit("RIVER_API_KEY not set")
     print(f"jeeves on http://127.0.0.1:{ARGS.port}/v1  base={ARGS.base} twin={'yes' if ARGS.twin else 'no'} mode={mode()} memory={'gbrain' if ARGS.gbrain else 'off'}", file=sys.stderr)

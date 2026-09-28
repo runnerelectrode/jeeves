@@ -1,0 +1,8 @@
+{
+ "step": 300,
+ "loss": 2.125807046890259,
+ "n": 16,
+ "seconds": 3.4,
+ "training": "river://3bba1248-39c0-4ce8-9375-20696e8cb4fe/weights/twin-run3-s300-train",
+ "inference": "river://3bba1248-39c0-4ce8-9375-20696e8cb4fe/sampler_weights/twin-run3-s300-inf"
+}

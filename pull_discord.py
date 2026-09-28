@@ -68,9 +68,13 @@ def main():
     ap.add_argument("--context", type=int, default=6, help="messages of thread before each reply")
     ap.add_argument("--window-min", type=int, default=180, help="context must be within this many minutes")
     ap.add_argument("--holdout", type=float, default=0.15)
+    ap.add_argument("--cached", action="store_true", help="rebuild pages and pairs from <out>/messages.jsonl without pulling")
     a = ap.parse_args()
-    token = os.environ["DISCORD_BOT_TOKEN"]
     out = Path(a.out); (out / "brain").mkdir(parents=True, exist_ok=True)
+    if a.cached:
+        rows = [json.loads(l) for l in (out / "messages.jsonl").read_text().splitlines() if l.strip()]
+        return build(a, rows, out)
+    token = os.environ["DISCORD_BOT_TOKEN"]
 
     guilds = get("/users/@me/guilds", token) or []
     g = next((x for x in guilds if x["id"] == a.guild or x["name"].lower() == a.guild.lower()), None)
@@ -92,7 +96,14 @@ def main():
         print(f"  #{ch['name']}: {len(msgs)} messages", file=sys.stderr)
     rows.sort(key=lambda r: r["ts"])
     (out / "messages.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    build(a, rows, out)
 
+
+def words(text):
+    return [w for w in text.split() if w not in ("<link>", "@someone", "#channel")]
+
+
+def build(a, rows, out):
     def is_author(r):
         return a.author.lower() in (r["author"].lower(), r["username"].lower(), r["author_id"])
     mine = [r for r in rows if is_author(r)]
@@ -120,7 +131,7 @@ def main():
             while j + 1 < len(rs) and is_author(rs[j + 1]) and _dt(rs[j + 1]) - _dt(rs[j]) < timedelta(minutes=5): j += 1
             reply = "\n".join(rs[k]["text"] for k in range(i, j + 1))
             ctx = [r for r in rs[max(0, i - a.context):i] if _dt(rs[i]) - _dt(r) < timedelta(minutes=a.window_min)]
-            if ctx and len(reply.split()) >= 3:
+            if ctx and len(words(reply)) >= 4 and reply.count("<link>") <= 1:   # no link-only replies
                 pairs.append({"channel": ch, "ts": rs[i]["ts"], "context": [{"author": r["author"], "text": r["text"]} for r in ctx], "reply": reply})
             i = j + 1
     pairs.sort(key=lambda p: p["ts"])

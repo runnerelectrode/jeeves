@@ -1,0 +1,40 @@
+{"step": 1, "loss": 3.8654661178588867, "n": 8, "seconds": 3.7}
+{"step": 2, "loss": 3.6653246879577637, "n": 8, "seconds": 3.5}
+{"step": 3, "loss": 2.868936061859131, "n": 8, "seconds": 4.3}
+{"step": 4, "loss": 2.6847433259930207, "n": 8, "seconds": 3.7}
+{"step": 5, "loss": 2.989032745361328, "n": 8, "seconds": 3.4}
+{"step": 6, "loss": 2.816336154937744, "n": 8, "seconds": 5.1}
+{"step": 7, "loss": 3.3966450691223145, "n": 8, "seconds": 3.9}
+{"step": 8, "loss": 3.4993414878845215, "n": 8, "seconds": 3.2}
+{"step": 9, "loss": 3.0409741401672363, "n": 8, "seconds": 3.6}
+{"step": 10, "loss": 2.875441551208496, "n": 8, "seconds": 3.4, "training": "river://89933d97-2a55-4b6d-9965-20fae7b951ba/weights/twin-run2-s10-train", "inference": "river://89933d97-2a55-4b6d-9965-20fae7b951ba/sampler_weights/twin-run2-s10-inf"}
+{"step": 11, "loss": 3.037184238433838, "n": 8, "seconds": 3.1}
+{"step": 12, "loss": 3.1280033588409424, "n": 8, "seconds": 3.7}
+{"step": 13, "loss": 2.8111772537231445, "n": 8, "seconds": 3.7}
+{"step": 14, "loss": 2.8505157739231453, "n": 8, "seconds": 3.7}
+{"step": 15, "loss": 2.9877007007598877, "n": 8, "seconds": 3.2}
+{"step": 16, "loss": 2.9250433444976807, "n": 8, "seconds": 7.5}
+{"step": 17, "loss": 2.656575918197632, "n": 8, "seconds": 3.3}
+{"step": 18, "loss": 3.1910881996154785, "n": 8, "seconds": 3.6}
+{"step": 19, "loss": 3.038125514984131, "n": 8, "seconds": 3.6}
+{"step": 20, "loss": 2.716207981109619, "n": 8, "seconds": 3.0, "training": "river://89933d97-2a55-4b6d-9965-20fae7b951ba/weights/twin-run2-s20-train", "inference": "river://89933d97-2a55-4b6d-9965-20fae7b951ba/sampler_weights/twin-run2-s20-inf"}
+{"step": 21, "loss": 2.6984987258911133, "n": 8, "seconds": 3.2}
+{"step": 22, "loss": 2.8947958946228027, "n": 8, "seconds": 3.2}
+{"step": 23, "loss": 3.3212361335754395, "n": 8, "seconds": 3.5}
+{"step": 24, "loss": 2.936433792114258, "n": 8, "seconds": 3.1}
+{"step": 25, "loss": 2.837333848317495, "n": 8, "seconds": 3.5}
+{"step": 26, "loss": 2.908761739730835, "n": 8, "seconds": 7.5}
+{"step": 27, "loss": 2.8370742797851562, "n": 8, "seconds": 3.8}
+{"step": 28, "loss": 2.937645435333252, "n": 8, "seconds": 3.2}
+{"step": 29, "loss": 3.0126444086260307, "n": 8, "seconds": 3.1}
+{"step": 30, "loss": 2.997213840484619, "n": 8, "seconds": 4.0, "training": "river://89933d97-2a55-4b6d-9965-20fae7b951ba/weights/twin-run2-s30-train", "inference": "river://89933d97-2a55-4b6d-9965-20fae7b951ba/sampler_weights/twin-run2-s30-inf"}
+{"step": 31, "loss": 3.011427879333496, "n": 8, "seconds": 3.3}
+{"step": 32, "loss": 2.503781318664551, "n": 8, "seconds": 3.4}
+{"step": 33, "loss": 3.2239999771118164, "n": 8, "seconds": 3.4}
+{"step": 34, "loss": 2.7118895053863525, "n": 8, "seconds": 3.0}
+{"step": 35, "loss": 2.6982812881469727, "n": 8, "seconds": 3.0}
+{"step": 36, "loss": 2.9242939949035645, "n": 8, "seconds": 6.4}
+{"step": 37, "loss": 2.8813905715942383, "n": 8, "seconds": 3.0}
+{"step": 38, "loss": 2.5499825477600098, "n": 8, "seconds": 3.0}
+{"step": 39, "loss": 2.7520486411990355, "n": 8, "seconds": 3.2}
+{"step": 40, "loss": 3.0762107372283936, "n": 8, "seconds": 3.1, "training": "river://89933d97-2a55-4b6d-9965-20fae7b951ba/weights/twin-run2-s40-train", "inference": "river://89933d97-2a55-4b6d-9965-20fae7b951ba/sampler_weights/twin-run2-s40-inf"}
