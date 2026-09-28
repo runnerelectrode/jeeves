@@ -104,7 +104,7 @@ def cmd_gate(a):
         pick = "A" if v.startswith("A") else "B" if v.startswith("B") else "?"
         twin_won = (pick == "A") == flip if pick != "?" else None
         wins += twin_won is True; losses += twin_won is False
-        rows.append({"channel": pr["channel"], "reference": pr["reply"], "base": base, "twin": twin, "twin_won": twin_won})
+        rows.append({"channel": pr["channel"], "context": pr["context"], "reference": pr["reply"], "base": base, "twin": twin, "twin_won": twin_won})
         print(f"  {k + 1}/{len(held)} twin {'WIN ' if twin_won else 'loss' if twin_won is False else 'n/a '} | ref: {pr['reply'][:60]!r}", flush=True)
     c.close()
     n = wins + losses
