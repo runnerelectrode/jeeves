@@ -14,6 +14,11 @@ import argparse, json, os, random, sys, time
 from datetime import timedelta
 from pathlib import Path
 
+JUDGE_FULL = ("You are judging replies in a team Discord. THREAD is the conversation; REFERENCE is what one specific person "
+              "really replied. A and B are two candidate replies to the same THREAD. Pick the one that BOTH sounds like the "
+              "REFERENCE author (tone, phrasing) AND actually answers the thread completely enough that a new teammate "
+              "could act on it. A bare fragment loses to a complete answer in the same voice. Answer with exactly one letter: A or B.")
+
 JUDGE = ("You are judging writing style, not correctness. REFERENCE is a Discord message a person really wrote in "
          "reply to THREAD. A and B are two other replies to the same THREAD. Which of A or B reads more like the "
          "person who wrote REFERENCE (tone, length, word choice, punctuation, how they open and close)? "
@@ -98,7 +103,7 @@ def cmd_gate(a):
             print(f"  skip {k}: {e}", file=sys.stderr); continue
         flip = rng.random() < 0.5
         A, B = (twin, base) if flip else (base, twin)
-        v = content(c.chat_complete([{"role": "system", "content": JUDGE}, {"role": "user", "content":
+        v = content(c.chat_complete([{"role": "system", "content": JUDGE_FULL if a.rubric == "full" else JUDGE}, {"role": "user", "content":
                     f"THREAD:\n{thread(pr, a.name)}\n\nREFERENCE ({a.name}'s real reply):\n{pr['reply']}\n\nA:\n{A}\n\nB:\n{B}\n\nAnswer A or B."}],
                     base_model=a.judge, max_tokens=4, temperature=0, chat_template_kwargs={"enable_thinking": False})).upper()
         pick = "A" if v.startswith("A") else "B" if v.startswith("B") else "?"
@@ -108,10 +113,14 @@ def cmd_gate(a):
         print(f"  {k + 1}/{len(held)} twin {'WIN ' if twin_won else 'loss' if twin_won is False else 'n/a '} | ref: {pr['reply'][:60]!r}", flush=True)
     c.close()
     n = wins + losses
-    receipt = {"n": n, "wins": wins, "losses": losses, "win_rate": round(wins / n, 3) if n else None,
+    receipt = {"n": n, "wins": wins, "losses": losses, "win_rate": round(wins / n, 3) if n else None, "rubric": a.rubric,
+               "avg_words": {"reference": round(sum(len(r["reference"].split()) for r in rows) / max(len(rows), 1), 1),
+                             "base": round(sum(len(r["base"].split()) for r in rows) / max(len(rows), 1), 1),
+                             "twin": round(sum(len(r["twin"].split()) for r in rows) / max(len(rows), 1), 1)},
                "checkpoint": latest["inference"], "trained_steps": latest["step"], "judge": a.judge, "base": a.model}
-    (run / "gate_rows.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
-    (run / "receipt.json").write_text(json.dumps(receipt, indent=1))
+    suffix = "" if a.rubric == "style" else f"-{a.rubric}"
+    (run / f"gate_rows{suffix}.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    (run / f"receipt{suffix}.json").write_text(json.dumps(receipt, indent=1))
     print(json.dumps(receipt, indent=1))
 
 
@@ -129,6 +138,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--name", required=True); ap.add_argument("--model", default="Qwen/Qwen3.5-9B")
     ap.add_argument("--judge", default="deepseek-ai/DeepSeek-V4.1-Flash")
+    ap.add_argument("--rubric", choices=["style", "full"], default="style", help="gate rubric: closest to the real reply's style, or complete answer in that voice")
     sub = ap.add_subparsers(dest="cmd", required=True)
     t = sub.add_parser("train"); t.add_argument("--data", required=True); t.add_argument("--run", required=True)
     t.add_argument("--steps", type=int, default=20); t.add_argument("--batch", type=int, default=8); t.add_argument("--lr", type=float, default=1e-4)

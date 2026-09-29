@@ -1,0 +1,19 @@
+{
+ "n": 40,
+ "wins": 24,
+ "losses": 16,
+ "win_rate": 0.6,
+ "rubric": "style",
+ "avg_words": {
+  "reference": 40.5,
+  "base": 19.6,
+  "twin": 34.2
+ },
+ "trained_steps": 600,
+ "judge": "deepseek-ai/DeepSeek-V4.1-Flash",
+ "base": "Qwen/Qwen3.5-9B",
+ "twin": "A (long replies, 600 steps)",
+ "config": "600 steps, batch 16, rank 32; replies merged over 20 min, >=15 words",
+ "training_pairs": 1443,
+ "holdout_pairs": 255
+}

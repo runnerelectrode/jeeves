@@ -1,0 +1,16 @@
+{
+ "n": 40,
+ "wins": 24,
+ "losses": 16,
+ "win_rate": 0.6,
+ "rubric": "full",
+ "avg_words": {
+  "reference": 40.5,
+  "base": 14.2,
+  "twin": 9.4
+ },
+ "checkpoint": "river://3bba1248-39c0-4ce8-9375-20696e8cb4fe/sampler_weights/twin-run3-s300-inf",
+ "trained_steps": 300,
+ "judge": "deepseek-ai/DeepSeek-V4.1-Flash",
+ "base": "Qwen/Qwen3.5-9B"
+}

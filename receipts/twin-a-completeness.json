@@ -1,0 +1,17 @@
+{
+ "n": 40,
+ "wins": 24,
+ "losses": 16,
+ "win_rate": 0.6,
+ "rubric": "completeness",
+ "avg_words": {
+  "reference": 40.5,
+  "base": 14.2,
+  "twin": 9.4
+ },
+ "trained_steps": 300,
+ "judge": "deepseek-ai/DeepSeek-V4.1-Flash",
+ "base": "Qwen/Qwen3.5-9B",
+ "twin": "A",
+ "config": "300 steps, batch 16, rank 32; gated on the long-reply holdout"
+}

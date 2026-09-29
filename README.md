@@ -73,6 +73,17 @@ Three teammates from one Discord server (31k messages), one LoRA each on Qwen3.5
 | B | 1818 | 321 | 120 steps, batch 16, rank 32 | 20 | 10 | 0.667 |
 | C | 1264 | 224 | 120 steps, batch 16, rank 32 | 17 | 13 | 0.567 |
 
+### Length is a data question, not a step count
+
+Same person, same judge model, two data cuts. "Completeness" is a second rubric that asks the blind judge for a reply that both sounds like the person and answers the thread fully.
+
+| twin | data cut | style judge | completeness judge | twin avg words (real ≈ 40, base ≈ 15–20) |
+|---|---|---|---|---|
+| A | consecutive messages merged over 5 min, ≥4 words | 19/30 | 24/40 | 9 |
+| A | merged over 20 min, ≥15 words, 600 steps | 24/40 | 25/40 | 34–38 |
+
+Cutting the pairs to full bursts moved the twin from 9 to 38 words with no change in either win rate. With 40 threads the interval is about ±15 points, so the next step is the gate (both orders, 115+ threads, length control), not more training.
+
 Training cost for all five runs together was under a dollar of River credit. `receipts/` has the JSON; per-thread rows are not committed because they quote messages.
 
 ## How UFO was pointed at River without touching it

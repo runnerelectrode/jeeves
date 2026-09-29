@@ -1,0 +1,8 @@
+{
+ "step": 600,
+ "loss": 0.49489402770996094,
+ "n": 16,
+ "seconds": 6.0,
+ "training": "river://a5ea6d3a-9f5e-487a-addd-e771e81a08fa/weights/twin-run5-s600-train",
+ "inference": "river://a5ea6d3a-9f5e-487a-addd-e771e81a08fa/sampler_weights/twin-run5-s600-inf"
+}
