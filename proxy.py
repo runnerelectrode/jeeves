@@ -62,6 +62,11 @@ def last_user_text(messages):
     return ""
 
 
+STOP = {"the","and","for","what","how","did","does","when","where","who","our","are","you","can","get","time","with","this","that",
+        "have","has","was","were","will","would","should","could","about","from","into","any","all","some","there","here","just","like",
+        "please","guys","hey","sort","out","need","want","know","think","going","reaching","doing"}
+
+
 def brain_dir(who):
     """The org brain for the base model; each twin's own brain (built from their messages only) for that twin."""
     if who and (TWINS.get(who) or {}).get("brain"):
@@ -73,15 +78,17 @@ def memory(query, who=None):
     cwd = brain_dir(who)
     if not cwd or not query.strip():
         return "", []
+    kw = [w for w in re.findall(r"[a-z0-9]{3,}", query.lower()) if w not in STOP]
+    fts = " ".join(kw[:8]) or query
     try:
-        out = subprocess.run(["gbrain", "search", query, "--limit", str(ARGS.memory_k), "--json"],
+        out = subprocess.run(["gbrain", "search", fts, "--limit", str(ARGS.memory_k), "--json"],
                              capture_output=True, text=True, timeout=20, env={**os.environ, "GBRAIN_HOME": str(cwd)})
         hits = json.loads(out.stdout) if out.stdout.strip() else []
     except Exception as e:  # memory is best-effort; the answer must still come
         log({"memory_error": str(e)[:200]}); return "", []
     if isinstance(hits, dict):
         hits = hits.get("results") or hits.get("hits") or []
-    qw = {w for w in re.findall(r"[a-z0-9]{3,}", query.lower())} - {"the", "and", "for", "what", "how", "did", "does", "when", "where", "who", "our", "are", "you", "can"}
+    qw = {w for w in re.findall(r"[a-z0-9]{3,}", query.lower())} - STOP
     facts = []
     for h in hits:
         txt = h.get("chunk_text") or h.get("content") or ""
@@ -133,13 +140,34 @@ def strip_context(c):
     return c.strip()
 
 
-def twin_messages(messages, mem, name):
+def grounded_draft(messages, mem, name):
+    """Base model answers the question from NAME's own memory, honestly saying when there is no record.
+    The twin then replies from that draft, so facts come from retrieval and only the voice comes from the LoRA."""
+    q = last_user_text(messages)
+    sys_prompt = (f"You answer on behalf of {name} using ONLY the memory lines below (things {name} actually wrote, with dates). "
+                  f"Reply in one to three plain sentences quoting the concrete facts (dates, times, names, numbers, places). "
+                  f"If some lines are relevant but do not fully answer, say what they do say (e.g. 'On 2023-11-28 {name} wrote that ...'). "
+                  f"Only if NO line is relevant to the question, reply exactly: NO_RECORD\n\nMEMORY:\n{mem or '(none)'}")
+    body = json.dumps({"model": ARGS.base, "messages": [{"role": "system", "content": sys_prompt}, {"role": "user", "content": q}],
+                       "max_tokens": 160, "temperature": 0, "chat_template_kwargs": {"enable_thinking": False}}).encode()
+    r = urllib.request.Request(RIVER + "/chat/completions", data=body,
+                               headers={"Authorization": "Bearer " + os.environ["RIVER_API_KEY"], "Content-Type": "application/json"})
+    with urllib.request.urlopen(r, timeout=120) as up:
+        d = json.loads(up.read())
+    t = d["choices"][0]["message"].get("content") or ""
+    if isinstance(t, list): t = "".join(p.get("text", "") for p in t if isinstance(p, dict))
+    return t.strip()
+
+
+def twin_messages(messages, mem, name, draft=None):
     """Shape the conversation exactly like the training threads: `someone: ...` lines, ending in the person's name.
     UFO's harness prompt is dropped; only the twin prompt (and, if asked, the memory note) remain."""
     sys_prompt = (f"You are {name}'s digital twin in the team's Discord. Reply the way {name} would: same tone, "
                   f"length and phrasing as their own messages. Reply only with the message text.")
     lines = []
-    if mem:
+    if draft:
+        lines.append(f"{name} (earlier): {draft[:600]}")
+    elif mem:
         if ARGS.memory_in_thread:
             # the adapter was trained on threads, so facts go into the thread as earlier messages it can quote
             for h in mem.split("\n"):
@@ -225,8 +253,16 @@ class H(BaseHTTPRequestHandler):
         m = f"twin:{who}" if who else "base"
         try:
             if who:
-                req["messages"] = twin_messages(req.get("messages", []), mem, who)
-                self._twin(req, who)
+                draft = None
+                if "grounded=1" in query or (ARGS.grounded_default and "grounded=0" not in query and "\n" not in q.strip()):
+                    draft = grounded_draft(req.get("messages", []), mem, who)
+                    log({"grounded_draft": draft[:120], "mem_lines": mem.count("\n") + (1 if mem else 0)})
+                    if draft.startswith("NO_RECORD") or not mem:
+                        # nothing in this person's messages: say so instead of letting the LoRA invent a fact in their voice
+                        self._mem_slugs = []
+                        return self._plain(req, f"(nothing in {who}'s messages about this)")
+                req["messages"] = twin_messages(req.get("messages", []), mem, who, draft)
+                self._twin(req, who, receipt=draft)
             else:
                 req["messages"] = base_messages(req.get("messages", []), mem)
                 self._forward(req)
@@ -260,15 +296,26 @@ class H(BaseHTTPRequestHandler):
             if not chunk: break
             self.wfile.write(chunk); self.wfile.flush()
 
+    def _plain(self, req, text):
+        cid, now = f"chatcmpl-{uuid.uuid4().hex[:12]}", int(time.time())
+        usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        if not req.get("stream"):
+            return self._json(200, {"id": cid, "object": "chat.completion", "created": now, "model": "jeeves",
+                                    "choices": [{"index": 0, "message": {"role": "assistant", "content": text}, "finish_reason": "stop"}], "usage": usage})
+        self.send_response(200); self.send_header("Content-Type", "text/event-stream"); self.send_header("Cache-Control", "no-cache"); self._mem_header(); self.end_headers()
+        for delta, fin in (({"role": "assistant", "content": text}, None), ({}, "stop")):
+            self.wfile.write(f"data: {json.dumps({'id': cid, 'object': 'chat.completion.chunk', 'created': now, 'model': 'jeeves', 'choices': [{'index': 0, 'delta': delta, 'finish_reason': fin}]})}\n\n".encode())
+        self.wfile.write(b"data: [DONE]\n\n"); self.wfile.flush()
+
     # -- twin: River checkpoint sampler, replayed as SSE
-    def _twin(self, req, who):
+    def _twin(self, req, who, receipt=None):
         import river_client as river
         latest = json.loads((TWINS[who]["run"] / "latest.json").read_text())
         c = river.Client(api_key=os.environ["RIVER_API_KEY"], timeout=600)
         msgs = req["messages"]
         gen = dict(checkpoint_path=latest["inference"], base_model=ARGS.twin_base,
                    max_tokens=min(int(req.get("max_completion_tokens") or req.get("max_tokens") or 512), 1024),
-                   temperature=req.get("temperature", 0.7), chat_template_kwargs={"enable_thinking": False})
+                   temperature=req.get("temperature", ARGS.twin_temperature), chat_template_kwargs={"enable_thinking": False})
         parts, body = [], None
         for _ in range(ARGS.max_messages):        # Discord style: a fragment, then the next message; stop at punctuation
             res = c.chat_complete_from_checkpoint(msgs, **gen)
@@ -283,6 +330,8 @@ class H(BaseHTTPRequestHandler):
             msgs = msgs[:-1] + [{"role": "user", "content": msgs[-1]["content"] + " " + t + f"\n{who}:"}]
         c.close()
         text = "\n".join(parts)
+        if receipt:
+            text += f"\n\n— from {who}'s messages: {receipt}"
         cid, now = f"chatcmpl-{uuid.uuid4().hex[:12]}", int(time.time())
         text = text.replace("<link>", "(link)").replace("@someone", "@you")
         usage = body.get("usage") or {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
@@ -313,7 +362,9 @@ def main():
     ap.add_argument("--twin-base", default="Qwen/Qwen3.5-9B")
     ap.add_argument("--name", default="the user", help="(legacy) name for a single --twin given as a bare path")
     ap.add_argument("--gbrain", default=None, help="the org brain: a GBRAIN_HOME directory (gbrain keeps one brain per home, not per cwd)")
-    ap.add_argument("--memory-k", type=int, default=5)
+    ap.add_argument("--memory-k", type=int, default=8)
+    ap.add_argument("--twin-temperature", type=float, default=0.4)
+    ap.add_argument("--grounded-default", action="store_true", help="single-line questions: base drafts from the twin's memory, twin replies from the draft")
     ap.add_argument("--max-messages", type=int, default=3, help="twin mode: continue an unfinished fragment with up to N more messages")
     ap.add_argument("--keep-harness-prompt", action="store_true")
     ap.add_argument("--memory-in-thread", action="store_true", help="twin mode: put memory hits in the thread instead of the system prompt")
