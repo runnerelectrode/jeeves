@@ -13,3 +13,7 @@ twin-*/gate_rows.jsonl
 twin-hammad/
 twin-usman/
 mode
+twin-dpo*/
+gate2-*/
+*.jsonl
+!receipts/*.json
