@@ -84,6 +84,22 @@ Same person, same judge model, two data cuts. "Completeness" is a second rubric 
 
 Cutting the pairs to full bursts moved the twin from 9 to 38 words with no change in either win rate. With 40 threads the interval is about ±15 points, so the next step is the gate (both orders, 115+ threads, length control), not more training.
 
+### Weights vs prompting vs preference training (gate v2, one person)
+
+120 held-out threads, 2 samples each, every arm judged against base in both orders; wins/losses count only pairs where the judge agreed with itself. Real replies average 41 words, base 18.
+
+| arm | style wins/losses | rate | 95% CI | length-controlled | completeness rate | words | stylometric distance to real |
+|---|---|---|---|---|---|---|---|
+| SFT, 600 steps | 114/36 | 0.76 | 0.69–0.82 | 0.66 | 0.71 | 37 | 0.18 |
+| DITTO (SFT step 200, then DPO 150) | 132/44 | 0.75 | 0.68–0.81 | 0.68 | 0.68 | 42 | 0.20 |
+| River `style_chat` recipe (restyle) | 67/32 | 0.68 | 0.58–0.76 | 0.57 | 0.59 | 17 | 0.34 |
+| DPO from base, 150 steps | 82/59 | 0.58 | 0.50–0.66 | 0.56 | 0.40 | 27 | 0.39 |
+| prompting: inferred style hypotheses | 87/76 | 0.53 | 0.46–0.61 | 0.56 | 0.53 | 76 | 0.84 |
+| prompting: 12 real replies few-shot | 72/64 | 0.53 | 0.45–0.61 | 0.53 | 0.53 | 24 | 0.36 |
+| DPO then OPSD (real reply as hint) | 33/168 | 0.16 | 0.12–0.22 | 0.35 | 0.09 | 117 | 0.88 |
+
+Findings: per-person weights beat prompting by ~20 points here; DITTO ties SFT (fewer judge order-flips, best length-controlled rate); DPO from base alone is worse than SFT and passes through a repetition-collapse phase (steps ~50–100) that on-policy replay later repairs; OPSD as a finishing stage lengthened replies to 117 words and lost badly; River's restyle recipe returns the base draft nearly unchanged (17 words) and the judge flipped on 141/240 of its pairs. DPO on River has no native loss and is emulated with `importance_sampling` advantages (`pref_twin.py`). `receipts/twin-a-gate2.json` has the numbers.
+
 Training cost for all five runs together was under a dollar of River credit. `receipts/` has the JSON; per-thread rows are not committed because they quote messages.
 
 ## How UFO was pointed at River without touching it

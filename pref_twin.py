@@ -17,16 +17,16 @@ from twin import messages, system, thread, jsonl
 def sigmoid(x): return 1.0 / (1.0 + math.exp(-x))
 
 class Scorer:
-    """Logprobs of fixed token sequences under the training policy or the frozen base (reference)."""
-    def __init__(self, session, model, base):
-        self.session, self.model, self.base, self.ref_cache = session, model, base, {}
+    """Logprobs of fixed token sequences under the training policy or the frozen reference (the DPO init checkpoint, or base)."""
+    def __init__(self, session, model, base, ref_ckpt=None):
+        self.session, self.model, self.base, self.ref_cache, self.ref_ckpt = session, model, base, {}, ref_ckpt
     def policy(self, seqs, p_lens):
         groups = self.model.sample(prompt_token_ids=seqs, max_tokens=1, temperature=1.0, return_prompt_logprobs=True)
         return [g[0].prompt_logprobs[p:len(s)] for g, s, p in zip(groups, seqs, p_lens)]
     def reference(self, seqs, p_lens):
         todo = [(i, s) for i, s in enumerate(seqs) if hashlib.sha1(json.dumps(s).encode()).hexdigest() not in self.ref_cache]
         if todo:
-            groups = self.session.sample(prompt_token_ids=[s for _, s in todo], base_model=self.base, max_tokens=1, temperature=1.0, return_prompt_logprobs=True)
+            groups = self.session.sample(prompt_token_ids=[s for _, s in todo], base_model=self.base, checkpoint=self.ref_ckpt, max_tokens=1, temperature=1.0, return_prompt_logprobs=True)
             for (i, s), g in zip(todo, groups):
                 self.ref_cache[hashlib.sha1(json.dumps(s).encode()).hexdigest()] = g[0].prompt_logprobs
         return [self.ref_cache[hashlib.sha1(json.dumps(s).encode()).hexdigest()][p:len(s)] for s, p in zip(seqs, p_lens)]
@@ -65,10 +65,13 @@ def cmd_dpo(a):
     print(f"{len(idx)} threads with negatives ({sum(len(v) for v in negs.values())} negatives)", file=sys.stderr, flush=True)
     c = river.Client(api_key=os.environ["RIVER_API_KEY"], timeout=3600)
     renderer = get_renderer(a.model, thinking=False)
-    init = json.loads(Path(a.init).read_text())["training"] if a.init else None
+    init_rec = json.loads(Path(a.init).read_text()) if a.init else None
+    init = init_rec["training"] if init_rec else None
+    ref_ckpt = init_rec["inference"] if init_rec else None      # DPO reference = the init policy (DITTO), not the raw base
     with c.session(experiment=f"dpo-{run.name}") as s:
-        model = s.create_model(base_model=a.model, lora=river.LoraConfig(rank=a.rank, train_unembed=True), checkpoint=init)
-        sc = Scorer(s, model, a.model)
+        # resuming an SFT adapter: the LoRA config must match the checkpoint (rank, no unembed adapter)
+        model = s.create_model(base_model=a.model, lora=river.LoraConfig(rank=a.rank, train_unembed=init is None), checkpoint=init)
+        sc = Scorer(s, model, a.model, ref_ckpt)
         ptr, step = 0, 0
         while step < a.steps:
             batch_i = [idx[(ptr + j) % len(idx)] for j in range(a.batch)]; ptr += a.batch
@@ -118,7 +121,7 @@ def cmd_opsd(a):
     renderer = get_renderer(a.model, thinking=False)
     init = json.loads(Path(a.init).read_text())["training"]
     with c.session(experiment=f"opsd-{run.name}") as s:
-        model = s.create_model(base_model=a.model, lora=river.LoraConfig(rank=a.rank, train_unembed=True), checkpoint=init)
+        model = s.create_model(base_model=a.model, lora=river.LoraConfig(rank=a.rank, train_unembed=a.unembed), checkpoint=init)
         ptr, step = 0, 0
         while step < a.steps:
             batch_i = [idx[(ptr + j) % len(idx)] for j in range(a.batch)]; ptr += a.batch
@@ -158,7 +161,7 @@ def main():
     d.add_argument("--replay-every", type=int, default=25); d.add_argument("--save-every", type=int, default=50); d.set_defaults(fn=cmd_dpo)
     o = sub.add_parser("opsd"); o.add_argument("--data", required=True); o.add_argument("--run", required=True); o.add_argument("--init", required=True)
     o.add_argument("--steps", type=int, default=150); o.add_argument("--batch", type=int, default=8); o.add_argument("--lr", type=float, default=1e-5)
-    o.add_argument("--kl-coef", type=float, default=1.0); o.add_argument("--rank", type=int, default=16); o.add_argument("--save-every", type=int, default=50); o.set_defaults(fn=cmd_opsd)
+    o.add_argument("--kl-coef", type=float, default=1.0); o.add_argument("--rank", type=int, default=16); o.add_argument("--unembed", action="store_true", help="init adapter was trained with the unembed adapter (DPO from base)"); o.add_argument("--save-every", type=int, default=50); o.set_defaults(fn=cmd_opsd)
     a = ap.parse_args(); a.fn(a)
 
 if __name__ == "__main__":

@@ -61,7 +61,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--name", required=True); ap.add_argument("--data", required=True); ap.add_argument("--out", required=True)
     ap.add_argument("--model", default="Qwen/Qwen3.5-9B"); ap.add_argument("--judge", default="deepseek-ai/DeepSeek-V4.1-Flash")
-    ap.add_argument("--arm", action="append", default=[], metavar="NAME=latest.json|prompt:fewshot|prompt:hypo")
+    ap.add_argument("--arm", action="append", default=[], metavar="NAME=latest.json|prompt:fewshot|prompt:hypo|restyle:latest.json")
     ap.add_argument("--n", type=int, default=120); ap.add_argument("--k", type=int, default=2); ap.add_argument("--workers", type=int, default=8)
     a = ap.parse_args()
     import river_client as river
@@ -82,6 +82,8 @@ def main():
                 (out / f"hypotheses-{n_}.txt").write_text(hyp)
                 sysp = system(a.name) + "\n\nStyle hypotheses about this person, derived from their messages. Follow all of them:\n" + hyp + "\n\nExamples of their messages:\n" + "\n".join(f"- {r}" for r in exs[:6])
             arms[n_] = {"kind": "prompt", "system": sysp}
+        elif v.startswith("restyle:"):      # River's recipe: base drafts, the rewriter LoRA restyles (temperature 0.3 as in style_chat.py)
+            arms[n_] = {"kind": "restyle", "path": json.loads(Path(v.split(":", 1)[1]).read_text())["inference"]}
         else:
             arms[n_] = {"kind": "ckpt", "path": json.loads(Path(v).read_text())["inference"]}
     print(f"arms: { {k: v['kind'] for k, v in arms.items()} }; {len(held)} threads x k={a.k}", file=sys.stderr, flush=True)
@@ -91,6 +93,11 @@ def main():
         if arm is None: return content(c.chat_complete(msgs, base_model=a.model, **GEN))
         if arm["kind"] == "prompt":
             return content(c.chat_complete([{"role": "system", "content": arm["system"]}, msgs[1]], base_model=a.model, **GEN))
+        if arm["kind"] == "restyle":
+            from restyle_twin import style_messages
+            raw = content(c.chat_complete(msgs, base_model=a.model, **GEN))
+            return content(c.chat_complete_from_checkpoint(style_messages(raw), checkpoint_path=arm["path"], base_model=a.model,
+                                                           max_tokens=200, temperature=0.3, chat_template_kwargs={"enable_thinking": False}))
         return content(c.chat_complete_from_checkpoint(msgs, checkpoint_path=arm["path"], base_model=a.model, **GEN))
 
     def judge(rubric, pair, A, B):
