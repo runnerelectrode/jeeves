@@ -10,8 +10,8 @@ ufo/
 .venv/
 __pycache__/
 twin-*/gate_rows.jsonl
-twin-hammad/
-twin-usman/
+twin-*/
+!twin-run*/
 mode
 twin-dpo*/
 gate2-*/
