@@ -140,6 +140,20 @@ def strip_context(c):
     return c.strip()
 
 
+def prompt_system(kind, name):
+    """System prompt for a prompting arm: fewshot = 12 of the person's real replies; hypo = inferred style hypotheses + 6 examples."""
+    import random
+    from twin import system as twin_sys
+    person = ARGS.name if ARGS.name != "the user" else name
+    data = ARGS.prompt_data
+    pairs = [json.loads(l) for l in Path(data, "pairs.jsonl").read_text().splitlines() if l.strip()]
+    exs = [p["reply"] for p in random.Random(11).sample(pairs, 40)]
+    if kind == "fewshot":
+        return twin_sys(person) + "\n\nHere are messages this person really wrote, to copy the voice from:\n" + "\n".join(f"- {r}" for r in exs[:12])
+    hyp = Path(ARGS.hypotheses).read_text() if ARGS.hypotheses else ""
+    return twin_sys(person) + "\n\nStyle hypotheses about this person, derived from their messages. Follow all of them:\n" + hyp + "\n\nExamples of their messages:\n" + "\n".join(f"- {r}" for r in exs[:6])
+
+
 def grounded_draft(messages, mem, name):
     """Base model answers the question from NAME's own memory, honestly saying when there is no record.
     The twin then replies from that draft, so facts come from retrieval and only the voice comes from the LoRA."""
@@ -221,9 +235,9 @@ class H(BaseHTTPRequestHandler):
         if self.path == "/twins":
             out = []
             for name, t in TWINS.items():
-                rc = t["run"] / "receipt.json"; lt = t["run"] / "latest.json"
-                out.append({"name": name, "receipt": json.loads(rc.read_text()) if rc.exists() else None,
-                            "steps": json.loads(lt.read_text()).get("step") if lt.exists() else None})
+                rc = (t["run"] / "receipt.json") if t["run"] else None; lt = (t["run"] / "latest.json") if t["run"] else None
+                out.append({"name": name, "kind": t["kind"], "receipt": json.loads(rc.read_text()) if rc and rc.exists() else None,
+                            "steps": json.loads(lt.read_text()).get("step") if lt and lt.exists() else t["kind"]})
             return self._json(200, {"base": ARGS.base, "twins": out, "ufo_models": UFO_MODEL_MAP})
         if self.path.startswith("/gate_rows"):
             name = self.path.partition("twin=")[2].partition("&")[0]
@@ -310,9 +324,23 @@ class H(BaseHTTPRequestHandler):
     # -- twin: River checkpoint sampler, replayed as SSE
     def _twin(self, req, who, receipt=None):
         import river_client as river
-        latest = json.loads((TWINS[who]["run"] / "latest.json").read_text())
+        t = TWINS[who]
         c = river.Client(api_key=os.environ["RIVER_API_KEY"], timeout=600)
         msgs = req["messages"]
+        gen_kw = dict(max_tokens=min(int(req.get("max_completion_tokens") or req.get("max_tokens") or 512), 1024),
+                      temperature=req.get("temperature", ARGS.twin_temperature), chat_template_kwargs={"enable_thinking": False})
+        if t["kind"] == "prompt":
+            msgs = [{"role": "system", "content": t["system"]}] + msgs[1:]
+            body = json.loads(c.chat_complete(msgs, base_model=ARGS.twin_base, **gen_kw).response_json)
+            c.close(); return self._emit(req, body, who)
+        if t["kind"] == "restyle":
+            from restyle_twin import style_messages
+            raw = json.loads(c.chat_complete(msgs, base_model=ARGS.twin_base, **gen_kw).response_json)["choices"][0]["message"].get("content") or ""
+            latest = json.loads((t["run"] / "latest.json").read_text())
+            body = json.loads(c.chat_complete_from_checkpoint(style_messages(raw.strip()), checkpoint_path=latest["inference"], base_model=ARGS.twin_base,
+                                                               max_tokens=gen_kw["max_tokens"], temperature=0.3, chat_template_kwargs={"enable_thinking": False}).response_json)
+            c.close(); return self._emit(req, body, who)
+        latest = json.loads((t["run"] / "latest.json").read_text())
         gen = dict(checkpoint_path=latest["inference"], base_model=ARGS.twin_base,
                    max_tokens=min(int(req.get("max_completion_tokens") or req.get("max_tokens") or 512), 1024),
                    temperature=req.get("temperature", ARGS.twin_temperature), chat_template_kwargs={"enable_thinking": False})
@@ -332,6 +360,13 @@ class H(BaseHTTPRequestHandler):
         text = "\n".join(parts)
         if receipt:
             text += f"\n\n— from {who}'s messages: {receipt}"
+        return self._emit(req, body, who, text)
+
+    def _emit(self, req, body, who, text=None):
+        if text is None:
+            text = body["choices"][0]["message"].get("content") or ""
+            if isinstance(text, list): text = "".join(p.get("text", "") for p in text if isinstance(p, dict))
+            text = text.strip()
         cid, now = f"chatcmpl-{uuid.uuid4().hex[:12]}", int(time.time())
         text = text.replace("<link>", "(link)").replace("@someone", "@you")
         usage = body.get("usage") or {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
@@ -365,6 +400,8 @@ def main():
     ap.add_argument("--memory-k", type=int, default=8)
     ap.add_argument("--twin-temperature", type=float, default=0.4)
     ap.add_argument("--grounded-default", action="store_true", help="single-line questions: base drafts from the twin's memory, twin replies from the draft")
+    ap.add_argument("--prompt-data", default="discord5", help="pairs dir for prompting arms' examples")
+    ap.add_argument("--hypotheses", default=None, help="style hypotheses file for the hypo prompting arm")
     ap.add_argument("--max-messages", type=int, default=3, help="twin mode: continue an unfinished fragment with up to N more messages")
     ap.add_argument("--keep-harness-prompt", action="store_true")
     ap.add_argument("--memory-in-thread", action="store_true", help="twin mode: put memory hits in the thread instead of the system prompt")
@@ -372,13 +409,19 @@ def main():
     if "RIVER_API_KEY" not in os.environ: sys.exit("RIVER_API_KEY not set")
     for spec in ARGS.twin:
         if "=" in spec:
-            name, _, rest = spec.partition("="); run, _, data = rest.partition(":")
+            name, _, rest = spec.partition("=")
         else:
-            name, run, data = ARGS.name, spec, ""
-        data, _, brain = data.partition(":")
-        run = Path(run); run = run.parent if run.name == "latest.json" else run
-        TWINS[name] = {"run": run.resolve(), "data": Path(data).resolve() if data else None,
-                       "brain": Path(brain).resolve() if brain else None}
+            name, rest = ARGS.name, spec
+        kind = "ckpt"
+        if rest.startswith("restyle:"): kind, rest = "restyle", rest[len("restyle:"):]
+        elif rest.startswith("prompt:"): kind, rest = "prompt", rest[len("prompt:"):]
+        run, _, data = rest.partition(":"); data, _, brain = data.partition(":")
+        entry = {"kind": kind, "data": Path(data).resolve() if data else None, "brain": Path(brain).resolve() if brain else None}
+        if kind == "prompt":
+            entry["run"] = None; entry["system"] = prompt_system(run, name)
+        else:
+            run = Path(run); run = run.parent if run.name == "latest.json" else run; entry["run"] = run.resolve()
+        TWINS[name] = entry
     # UFO's closed model list -> bots: `ufo --model gpt-5.4 "..."` talks to the first twin, etc.
     for mid, who in zip(["gpt-5.4", "gpt-5.5", "gpt-5.4-nano"], TWINS):
         UFO_MODEL_MAP[mid] = who
