@@ -68,6 +68,9 @@ def main():
     ap.add_argument("--context", type=int, default=6, help="messages of thread before each reply")
     ap.add_argument("--window-min", type=int, default=180, help="context must be within this many minutes")
     ap.add_argument("--holdout", type=float, default=0.15)
+    ap.add_argument("--holdout-mode", choices=["newest", "recent-random"], default="newest",
+                    help="newest: hold out the last N%% by time; recent-random: hold out a random N%% of pairs since --recent-since, train on everything else")
+    ap.add_argument("--recent-since", default="2025-01", help="recent-random: pairs at/after this ISO prefix are the holdout pool")
     ap.add_argument("--merge-min", type=int, default=5, help="merge the author's consecutive messages within this many minutes into one reply")
     ap.add_argument("--min-words", type=int, default=4)
     ap.add_argument("--cached", action="store_true", help="rebuild pages and pairs from <out>/messages.jsonl without pulling")
@@ -137,10 +140,17 @@ def build(a, rows, out):
                 pairs.append({"channel": ch, "ts": rs[i]["ts"], "context": [{"author": r["author"], "text": r["text"]} for r in ctx], "reply": reply})
             i = j + 1
     pairs.sort(key=lambda p: p["ts"])
-    cut = int(len(pairs) * (1 - a.holdout))
-    (out / "pairs.jsonl").write_text("".join(json.dumps(p) + "\n" for p in pairs[:cut]))
-    (out / "holdout.jsonl").write_text("".join(json.dumps(p) + "\n" for p in pairs[cut:]))
-    print(f"pairs: {cut} train, {len(pairs) - cut} holdout; brain pages: {len(by_ch)}", file=sys.stderr)
+    if a.holdout_mode == "recent-random":
+        import random
+        recent = [i for i, p in enumerate(pairs) if p["ts"] >= a.recent_since]
+        hold = set(random.Random(7).sample(recent, int(len(recent) * a.holdout)))
+        train = [p for i, p in enumerate(pairs) if i not in hold]; held = [p for i, p in enumerate(pairs) if i in hold]
+    else:
+        cut = int(len(pairs) * (1 - a.holdout)); train, held = pairs[:cut], pairs[cut:]
+    (out / "pairs.jsonl").write_text("".join(json.dumps(p) + "\n" for p in train))
+    (out / "holdout.jsonl").write_text("".join(json.dumps(p) + "\n" for p in held))
+    recent_n = sum(p["ts"] >= a.recent_since for p in train)
+    print(f"pairs: {len(train)} train ({recent_n} since {a.recent_since}), {len(held)} holdout ({a.holdout_mode}); brain pages: {len(by_ch)}", file=sys.stderr)
 
 
 def _dt(r):

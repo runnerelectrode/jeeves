@@ -14,7 +14,7 @@ answer as SSE chunks. Tools are dropped in twin mode: the twin answers in text.
 """
 from __future__ import annotations
 
-import argparse, json, os, re, subprocess, sys, time, urllib.error, urllib.request, uuid
+import argparse, urllib.parse, json, os, re, subprocess, sys, time, urllib.error, urllib.request, uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -173,6 +173,26 @@ def grounded_draft(messages, mem, name):
     return t.strip()
 
 
+AUTHOR_LINE = re.compile(r"^([A-Za-z0-9_.#\- ]{1,24}): (.+)$")
+
+
+def thread_lines(text):
+    """A pasted thread keeps its `author: text` lines (the shape the adapter was trained on);
+    anything else is one message from `someone`."""
+    ls = [l for l in text.splitlines() if l.strip()]
+    if any(AUTHOR_LINE.match(l) for l in ls):
+        out, cur = [], None
+        for l in ls:
+            if AUTHOR_LINE.match(l): out.append(l.strip()); cur = len(out) - 1
+            elif cur is not None: out[cur] += "\n" + l.strip()      # continuation line of the same message
+            else: out.append(f"someone: {l.strip()}")
+        return out
+    return [f"someone: {text.strip()}"]
+
+
+RECENT = []   # messages.jsonl rows, if --messages was given: lets the page load a real recent thread per channel
+
+
 def twin_messages(messages, mem, name, draft=None):
     """Shape the conversation exactly like the training threads: `someone: ...` lines, ending in the person's name.
     UFO's harness prompt is dropped; only the twin prompt (and, if asked, the memory note) remain."""
@@ -192,7 +212,7 @@ def twin_messages(messages, mem, name, draft=None):
     for m in messages:
         if m.get("role") == "user":
             t = strip_context(m.get("content"))
-            if t: lines.append(f"someone: {t}")
+            if t: lines.extend(thread_lines(t))
         elif m.get("role") == "assistant" and isinstance(m.get("content"), str) and m["content"].strip():
             lines.append(f"{ARGS.name}: {m['content'].strip()}")
     lines = lines[-14:]
@@ -239,6 +259,15 @@ class H(BaseHTTPRequestHandler):
                 out.append({"name": name, "kind": t["kind"], "receipt": json.loads(rc.read_text()) if rc and rc.exists() else None,
                             "steps": json.loads(lt.read_text()).get("step") if lt and lt.exists() else t["kind"]})
             return self._json(200, {"base": ARGS.base, "twins": out, "ufo_models": UFO_MODEL_MAP})
+        if self.path == "/channels":
+            from collections import Counter
+            c = Counter(r["channel"] for r in RECENT if r.get("ts", "") >= "2025-01")
+            return self._json(200, {"channels": [{"name": k, "n": v} for k, v in c.most_common()]})
+        if self.path.startswith("/recent"):
+            qs = dict(part.split("=", 1) for part in self.path.partition("?")[2].split("&") if "=" in part)
+            ch = urllib.parse.unquote(qs.get("channel", "")); n = int(qs.get("n", 12))
+            rows = [r for r in RECENT if r["channel"] == ch][-n:]
+            return self._json(200, {"channel": ch, "messages": [{"author": r["author"], "text": r["text"], "ts": r["ts"][:16]} for r in rows]})
         if self.path.startswith("/gate_rows"):
             name = self.path.partition("twin=")[2].partition("&")[0]
             t = TWINS.get(name)
@@ -404,8 +433,12 @@ def main():
     ap.add_argument("--hypotheses", default=None, help="style hypotheses file for the hypo prompting arm")
     ap.add_argument("--max-messages", type=int, default=3, help="twin mode: continue an unfinished fragment with up to N more messages")
     ap.add_argument("--keep-harness-prompt", action="store_true")
+    ap.add_argument("--messages", default=None, help="messages.jsonl from pull_discord: lets the demo page load a channel's last messages as the thread")
     ap.add_argument("--memory-in-thread", action="store_true", help="twin mode: put memory hits in the thread instead of the system prompt")
     ARGS = ap.parse_args()
+    if ARGS.messages:
+        RECENT.extend(json.loads(l) for l in Path(ARGS.messages).read_text().splitlines() if l.strip())
+        RECENT[:] = [r for r in RECENT if not r.get("bot") and r.get("text")]
     if "RIVER_API_KEY" not in os.environ: sys.exit("RIVER_API_KEY not set")
     for spec in ARGS.twin:
         if "=" in spec:
@@ -418,7 +451,7 @@ def main():
         run, _, data = rest.partition(":"); data, _, brain = data.partition(":")
         entry = {"kind": kind, "data": Path(data).resolve() if data else None, "brain": Path(brain).resolve() if brain else None}
         if kind == "prompt":
-            entry["run"] = None; entry["system"] = prompt_system(run, name)
+            d = Path(f"twin-{name}"); entry["run"] = d.resolve() if d.exists() else None; entry["system"] = prompt_system(run, name)
         else:
             run = Path(run); run = run.parent if run.name == "latest.json" else run; entry["run"] = run.resolve()
         TWINS[name] = entry

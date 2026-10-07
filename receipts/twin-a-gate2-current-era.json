@@ -1,0 +1,142 @@
+{
+ "n_threads": 81,
+ "k": 2,
+ "judge": "deepseek-ai/DeepSeek-V4.1-Flash",
+ "base": "Qwen/Qwen3.5-9B",
+ "arms": {
+  "sft6": {
+   "style": {
+    "wins": 85,
+    "losses": 27,
+    "order_disagreements": 50,
+    "win_rate": 0.759,
+    "ci95": [
+     0.672,
+     0.829
+    ],
+    "raw_win_rate_all_votes": 0.679,
+    "length_controlled_win_rate": 0.683,
+    "length_slope": -0.18
+   },
+   "full": {
+    "wins": 81,
+    "losses": 26,
+    "order_disagreements": 55,
+    "win_rate": 0.757,
+    "ci95": [
+     0.668,
+     0.828
+    ],
+    "raw_win_rate_all_votes": 0.67,
+    "length_controlled_win_rate": 0.661,
+    "length_slope": 0.14
+   },
+   "stylometry": {
+    "zdist_to_real": 0.149,
+    "per_feature_z": {
+     "words": 0.13,
+     "func": 0.41,
+     "wlen": 0.09,
+     "lower_start": 0.2,
+     "no_end_punct": 0.08,
+     "emoji": 0.19,
+     "lines": 0.1,
+     "qmark": 0.14,
+     "caps": 0.0
+    },
+    "avg_words": 27.7
+   }
+  },
+  "sft": {
+   "style": {
+    "wins": 77,
+    "losses": 41,
+    "order_disagreements": 44,
+    "win_rate": 0.653,
+    "ci95": [
+     0.563,
+     0.732
+    ],
+    "raw_win_rate_all_votes": 0.611,
+    "length_controlled_win_rate": 0.635,
+    "length_slope": -0.4
+   },
+   "full": {
+    "wins": 84,
+    "losses": 34,
+    "order_disagreements": 44,
+    "win_rate": 0.712,
+    "ci95": [
+     0.624,
+     0.786
+    ],
+    "raw_win_rate_all_votes": 0.654,
+    "length_controlled_win_rate": 0.65,
+    "length_slope": 0.0
+   },
+   "stylometry": {
+    "zdist_to_real": 0.184,
+    "per_feature_z": {
+     "words": 0.03,
+     "func": 0.36,
+     "wlen": 0.29,
+     "lower_start": 0.17,
+     "no_end_punct": 0.1,
+     "emoji": 0.26,
+     "lines": 0.08,
+     "qmark": 0.08,
+     "caps": 0.28
+    },
+    "avg_words": 34.2
+   }
+  },
+  "fewshot": {
+   "style": {
+    "wins": 54,
+    "losses": 47,
+    "order_disagreements": 61,
+    "win_rate": 0.535,
+    "ci95": [
+     0.438,
+     0.629
+    ],
+    "raw_win_rate_all_votes": 0.522,
+    "length_controlled_win_rate": 0.556,
+    "length_slope": -0.71
+   },
+   "full": {
+    "wins": 35,
+    "losses": 47,
+    "order_disagreements": 80,
+    "win_rate": 0.427,
+    "ci95": [
+     0.325,
+     0.535
+    ],
+    "raw_win_rate_all_votes": 0.463,
+    "length_controlled_win_rate": 0.481,
+    "length_slope": -0.35
+   },
+   "stylometry": {
+    "zdist_to_real": 0.327,
+    "per_feature_z": {
+     "words": 0.02,
+     "func": 0.04,
+     "wlen": 0.26,
+     "lower_start": 0.64,
+     "no_end_punct": 0.77,
+     "emoji": 0.32,
+     "lines": 0.04,
+     "qmark": 0.35,
+     "caps": 0.5
+    },
+    "avg_words": 33.7
+   }
+  }
+ },
+ "base_stylometry": {
+  "zdist": 0.289,
+  "avg_words": 18.8
+ },
+ "real_avg_words": 33.0
+}

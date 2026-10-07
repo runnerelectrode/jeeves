@@ -23,7 +23,8 @@ select{font:inherit;padding:4px 8px}
 <header><h1>Jeeves</h1><span>how would each teammate reply? · LoRA per person on River, trained on their own Discord replies · blind-judged on threads they never saw</span></header>
 <main>
 <h2>A thread, and how the team would reply</h2>
-<textarea id="q" placeholder="paste a thread (one message per line, optionally 'name: text') or just type a message…"></textarea>
+<div class="hint" style="margin-bottom:8px">channel <select id="ch"></select> <button id="load" style="margin:0;padding:6px 10px">load the last 12 messages</button> &nbsp; then add the next message as a teammate, e.g. <code>Hammad: …</code></div>
+<textarea id="q" placeholder="paste a thread (one message per line, 'name: text') or just type a message…" style="min-height:150px"></textarea>
 <button id="go">Ask the team</button> <span class="hint">base = Qwen3.8-27B untrained · each twin = Qwen3.5-9B + that person's LoRA</span>
 <div id="out"></div>
 
@@ -38,7 +39,7 @@ select{font:inherit;padding:4px 8px}
 let twins=[];
 const $=s=>document.querySelector(s);
 async function ask(q,twin){const url='/v1/chat/completions?'+(twin?'twin='+encodeURIComponent(twin):'mode=base');
- const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'jeeves',max_tokens:160,messages:[{role:'user',content:q}]})});
+ const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'jeeves',max_tokens:200,messages:[{role:'user',content:q}]})});
  const mem=(r.headers.get('X-Jeeves-Memory')||'').split(',').filter(Boolean);
  const d=await r.json();return {text:d.choices?d.choices[0].message.content:JSON.stringify(d).slice(0,200),mem}}
 $('#go').onclick=async()=>{const q=$('#q').value.trim();if(!q)return;
@@ -56,6 +57,9 @@ async function showRows(name){const d=await (await fetch('/gate_rows?twin='+enco
   <div class="card twin"><div class="lab">${name}'s twin</div>${esc(r.twin)}</div></div>
   <div class="pick ${r.twin_won?'win':'loss'}">${r.twin_won===true?'judge picked the twin':r.twin_won===false?'judge picked base':'no verdict'}</div></div>`).join('')}
 function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
+fetch('/channels').then(r=>r.json()).then(d=>{$('#ch').innerHTML=(d.channels||[]).map(c=>`<option>${c.name}</option>`).join('')}).catch(()=>{});
+$('#load').onclick=async()=>{const d=await (await fetch('/recent?channel='+encodeURIComponent($('#ch').value)+'&n=12')).json();
+ $('#q').value=(d.messages||[]).map(m=>`${m.author}: ${m.text.replace(/\n/g,' ')}`).join('\n')+'\n'};
 fetch('/twins').then(r=>r.json()).then(d=>{twins=d.twins;
  $('#rt').insertAdjacentHTML('beforeend',twins.map(t=>{const r=t.receipt;return `<tr><td>${t.name}</td><td>${t.steps??'training…'}</td><td>${r?r.wins:'—'}</td><td>${r?r.losses:'—'}</td><td>${r?r.win_rate:'gate pending'}</td></tr>`}).join(''));
  $('#pick').innerHTML=twins.map(t=>`<option>${t.name}</option>`).join('');$('#pick').onchange=e=>showRows(e.target.value);if(twins[0])showRows(twins[0].name)});

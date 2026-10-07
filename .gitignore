@@ -17,3 +17,6 @@ twin-dpo*/
 gate2-*/
 *.jsonl
 !receipts/*.json
+blind-*/
+ledger*.jsonl
+bot.out

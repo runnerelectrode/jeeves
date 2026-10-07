@@ -100,6 +100,20 @@ Cutting the pairs to full bursts moved the twin from 9 to 38 words with no chang
 
 Findings: per-person weights beat prompting by ~20 points here; DITTO ties SFT (fewer judge order-flips, best length-controlled rate); DPO from base alone is worse than SFT and passes through a repetition-collapse phase (steps ~50–100) that on-policy replay later repairs; OPSD as a finishing stage lengthened replies to 117 words and lost badly; River's restyle recipe returns the base draft nearly unchanged (17 words) and the judge flipped on 141/240 of its pairs. DPO on River has no native loss and is emulated with `importance_sampling` advantages (`pref_twin.py`). `receipts/twin-a-gate2.json` has the numbers.
 
+### Re-cut for the current era (gate v2, 81 threads, one person)
+
+The first cuts held out "the newest 15% by time", which turned out to be every thread from 2025 on: the twin was trained on 2019–2024 chat and tested on the current project. `pull_discord.py --holdout-mode recent-random` holds out a random 20% of recent threads instead and trains on everything else (2,251 pairs, 327 from the current era). Same judge, both orders, 81 held-out threads × 2 samples.
+
+| arm | style wins/losses | rate | 95% CI | length-controlled | words |
+|---|---|---|---|---|---|
+| SFT, re-cut, 420 steps (~3 passes) | 85/27 | **0.76** | [0.67, 0.83] | 0.68 | 28 |
+| SFT, old cut, 600 steps (~7 passes) | 77/41 | 0.65 | [0.56, 0.73] | 0.64 | 34 |
+| few-shot prompting | 54/47 | 0.54 | [0.44, 0.63] | 0.56 | 34 |
+
+Real replies average 33 words. On the current era the re-cut twin is ~10 points over the old one and ~22 over prompting, at a final loss of 2.0 rather than 0.5 (the old run memorised). Two serving fixes mattered as much as the data: the proxy now keeps `author: text` lines from a pasted thread (the adapter answers each teammate differently; the page used to turn everyone into "someone"), and the page can load a channel's last 12 messages as the thread. `receipts/twin-a-gate2-current-era.json`.
+
+`bot.py` is the drafting bot: in watched channels it drafts the owner's next message from the last 12 messages, DMs a Send / Edit / Skip card, and logs every decision as a training row (send = positive pair, edit = preference pair, skip = negative). `blind.py` writes a blind sheet: held-out threads with the real reply and the twin's in random order, for a human panel.
+
 Training cost for all five runs together was under a dollar of River credit. `receipts/` has the JSON; per-thread rows are not committed because they quote messages.
 
 ## How UFO was pointed at River without touching it
